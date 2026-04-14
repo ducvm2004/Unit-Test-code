@@ -86,35 +86,106 @@ class RoleMenuServiceImplTest {
     @InjectMocks
     private UserServiceImpl userService;
 
+
     @Test
-    @DisplayName("checkPermission theo role + action VIEW/UPDATE/DELETE/EXPORT")
-    void checkPermissionByRoleAndAction_shouldSupportAllActions() {
-        // TC01
-        // Arrange: giả lập 1 menu có đầy đủ 4 quyền.
+    @DisplayName("TC01 - chỉ kiểm tra quyền VIEW")
+    void shouldGrantOnlyViewPermission() {
+        // Arrange: repository trả về đúng 1 quyền VIEW cho menu USER.
         Long userId = 100L;
         String menuCode = "USER";
 
         RoleMenuProjection projection = mock(RoleMenuProjection.class);
         when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("VIEW,UPDATE,DELETE,EXPORT");
+        when(projection.getPermission()).thenReturn("VIEW");
 
         when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
                 .thenReturn(List.of(projection));
 
-        // Act: tạo authorities từ dữ liệu projection trả về từ repository.
+        // Act: build authorities từ role HR_ADMIN.
         Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
 
-        // Assert: menu USER phải chứa đủ các action mong đợi.
+        // Assert: chỉ có VIEW, các action còn lại phải bị từ chối.
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.EXPORT));
+    }
+
+    @Test
+    @DisplayName("TC02 - chỉ kiểm tra quyền UPDATE")
+    void shouldGrantOnlyUpdatePermission() {
+        // Arrange
+        Long userId = 100L;
+        String menuCode = "USER";
+
+        RoleMenuProjection projection = mock(RoleMenuProjection.class);
+        when(projection.getMenuCode()).thenReturn(menuCode);
+        when(projection.getPermission()).thenReturn("UPDATE");
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
+                .thenReturn(List.of(projection));
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
+
+        // Assert
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.UPDATE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.EXPORT));
+    }
+
+    @Test
+    @DisplayName("TC03 - chỉ kiểm tra quyền DELETE")
+    void shouldGrantOnlyDeletePermission() {
+        // Arrange
+        Long userId = 100L;
+        String menuCode = "USER";
+
+        RoleMenuProjection projection = mock(RoleMenuProjection.class);
+        when(projection.getMenuCode()).thenReturn(menuCode);
+        when(projection.getPermission()).thenReturn("DELETE");
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
+                .thenReturn(List.of(projection));
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
+
+        // Assert
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.DELETE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.EXPORT));
+    }
+
+    @Test
+    @DisplayName("TC04 - chỉ kiểm tra quyền EXPORT")
+    void shouldGrantOnlyExportPermission() {
+        // Arrange
+        Long userId = 100L;
+        String menuCode = "USER";
+
+        RoleMenuProjection projection = mock(RoleMenuProjection.class);
+        when(projection.getMenuCode()).thenReturn(menuCode);
+        when(projection.getPermission()).thenReturn("EXPORT");
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
+                .thenReturn(List.of(projection));
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
+
+        // Assert
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.EXPORT));
     }
 
     @Test
-    @DisplayName("Lọc theo phạm vi quyền: role chỉ có VIEW không được UPDATE/DELETE/EXPORT")
+    @DisplayName("TC05 - Lọc theo phạm vi quyền: role chỉ có VIEW không được UPDATE/DELETE/EXPORT")
     void shouldFilterDataByPermissionScope_viewOnlyRole() {
-        // TC02
         // Arrange: role chỉ có quyền VIEW trên menu mục tiêu.
         Long userId = 101L;
         String menuCode = "USER";
@@ -137,10 +208,9 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("Thiếu 1 permission ở role A nhưng được role B bù quyền")
-    void shouldMergePermissionsWhenAnotherRoleCompensates() {
-        // TC03
-        // Arrange: role A có VIEW, role B có EXPORT trên cùng menu.
+    @DisplayName("TC06 - Hai role cùng menu, mỗi role 1 quyền khác nhau")
+    void shouldMergeDifferentPermissionsFromTwoRolesOnSameMenu() {
+        // Arrange: ROLE_A cấp VIEW, ROLE_B cấp EXPORT trên cùng menu USER.
         Long userId = 102L;
         String menuCode = "USER";
 
@@ -155,28 +225,100 @@ class RoleMenuServiceImplTest {
         when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
                 .thenReturn(List.of(roleAProjection, roleBProjection));
 
-        // Act: authorities được gộp từ cả hai role.
+        // Act
         Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
 
-        // Assert: người dùng nhận được quyền bù/gộp theo đúng kỳ vọng.
+        // Assert: quyền phải được gộp lại.
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.EXPORT));
     }
 
     @Test
-    @DisplayName("Stale role hoặc role không tồn tại: không có permission hợp lệ")
-    void shouldReturnEmptyAuthoritiesForStaleOrMissingRole() {
-        // TC04
-        // Arrange: role stale/không tồn tại trả về danh sách quyền rỗng.
+    @DisplayName("TC07 - Hai role cùng menu, quyền bị trùng")
+    void shouldHandleDuplicatePermissionsFromTwoRolesOnSameMenu() {
+        // Arrange: cả hai role đều trả về VIEW trên cùng menu USER.
+        Long userId = 102L;
+        String menuCode = "USER";
+
+        RoleMenuProjection roleAProjection = mock(RoleMenuProjection.class);
+        when(roleAProjection.getMenuCode()).thenReturn(menuCode);
+        when(roleAProjection.getPermission()).thenReturn("VIEW");
+
+        RoleMenuProjection roleBProjection = mock(RoleMenuProjection.class);
+        when(roleBProjection.getMenuCode()).thenReturn(menuCode);
+        when(roleBProjection.getPermission()).thenReturn("VIEW");
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
+                .thenReturn(List.of(roleAProjection, roleBProjection));
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
+
+        // Assert: kết quả vẫn chỉ hợp lệ ở VIEW, không phát sinh quyền khác.
+        assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
+        assertFalse(hasPermission(authorities, menuCode, PermissionType.EXPORT));
+    }
+
+    @Test
+    @DisplayName("TC08 - Hai role khác menu, không trộn permission sai menu")
+    void shouldNotMixPermissionsAcrossDifferentMenus() {
+        // Arrange: USER menu có VIEW, ROLE menu có DELETE.
+        Long userId = 102L;
+        String userMenuCode = "USER";
+        String roleMenuCode = "ROLE";
+
+        RoleMenuProjection userMenuProjection = mock(RoleMenuProjection.class);
+        when(userMenuProjection.getMenuCode()).thenReturn(userMenuCode);
+        when(userMenuProjection.getPermission()).thenReturn("VIEW");
+
+        RoleMenuProjection roleMenuProjection = mock(RoleMenuProjection.class);
+        when(roleMenuProjection.getMenuCode()).thenReturn(roleMenuCode);
+        when(roleMenuProjection.getPermission()).thenReturn("DELETE");
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
+                .thenReturn(List.of(userMenuProjection, roleMenuProjection));
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
+
+        // Assert: mỗi menu chỉ giữ quyền của chính nó.
+        assertTrue(hasPermission(authorities, userMenuCode, PermissionType.VIEW));
+        assertFalse(hasPermission(authorities, userMenuCode, PermissionType.DELETE));
+        assertTrue(hasPermission(authorities, roleMenuCode, PermissionType.DELETE));
+        assertFalse(hasPermission(authorities, roleMenuCode, PermissionType.VIEW));
+    }
+
+    @Test
+    @DisplayName("TC09 - Role stale: không còn bản ghi quyền hợp lệ")
+    void shouldReturnEmptyAuthoritiesForStaleRole() {
+        // Arrange: role xuất hiện ở input nhưng repository không còn bản ghi authority.
         Long userId = 103L;
 
         when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("STALE_ROLE")))
                 .thenReturn(List.of());
 
-        // Act: lấy authorities từ service.
+        // Act
         Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("STALE_ROLE"));
 
-        // Assert: map authorities phải rỗng.
+        // Assert: fail-safe, không cấp quyền nào.
+        assertTrue(authorities.isEmpty());
+    }
+
+    @Test
+    @DisplayName("TC10 - Role không tồn tại: không có permission hợp lệ")
+    void shouldReturnEmptyAuthoritiesForMissingRole() {
+        // Arrange: role không tồn tại trong hệ thống.
+        Long userId = 104L;
+
+        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("MISSING_ROLE")))
+                .thenReturn(List.of());
+
+        // Act
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("MISSING_ROLE"));
+
+        // Assert: không tạo phantom permissions.
         assertTrue(authorities.isEmpty());
     }
 
@@ -187,7 +329,7 @@ class RoleMenuServiceImplTest {
     // khi thu hồi quyền SYSTEM_ADMIN.
 
     @Test
-    @DisplayName("Guard: khong tu tuoc quyen admin cua chinh minh")
+    @DisplayName("TC11 - Guard: khong tu tuoc quyen admin cua chinh minh")
     void retrieveAdminSystemRole_shouldNotAllowRemovingOwnAdminRole() {
         // TC05
         // Arrange: user hiện tại cũng chính là user bị thu hồi và đang có SYSTEM_ADMIN.
@@ -224,9 +366,8 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("Guard: khong xoa admin cuoi cung")
+    @DisplayName("TC12 - Guard: khong xoa admin cuoi cung")
     void retrieveAdminSystemRole_shouldNotRemoveLastActiveAdmin() {
-        // TC06
         // Arrange: actor thu hồi quyền của admin khác, nhưng sau đó hệ thống không còn admin active.
         Long actorUserId = 21L;
         Long targetUserId = 22L;
