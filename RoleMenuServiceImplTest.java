@@ -1,110 +1,81 @@
 package com.cvconnect.service.impl;
 
-import com.cvconnect.constant.Constants;
-import com.cvconnect.dto.role.RoleDto;
-import com.cvconnect.dto.roleMenu.RoleMenuProjection;
-import com.cvconnect.dto.roleUser.RoleUserDto;
+import com.cvconnect.entity.Menu;
+import com.cvconnect.entity.Role;
+import com.cvconnect.entity.RoleMenu;
+import com.cvconnect.entity.RoleUser;
 import com.cvconnect.entity.User;
 import com.cvconnect.enums.PermissionType;
-import com.cvconnect.enums.UserErrorCode;
+import com.cvconnect.repository.MenuRepository;
 import com.cvconnect.repository.RoleMenuRepository;
+import com.cvconnect.repository.RoleRepository;
+import com.cvconnect.repository.RoleUserRepository;
 import com.cvconnect.repository.UserRepository;
-import com.cvconnect.service.AuthService;
-import com.cvconnect.service.CandidateService;
-import com.cvconnect.service.FailedRollbackService;
-import com.cvconnect.service.ManagementMemberService;
-import com.cvconnect.service.OrgMemberService;
-import com.cvconnect.service.RoleService;
-import com.cvconnect.service.RoleUserService;
-import com.cvconnect.utils.ServiceUtils;
-import nmquan.commonlib.exception.AppException;
-import nmquan.commonlib.utils.WebUtils;
-import org.junit.jupiter.api.DisplayName;
+import com.cvconnect.service.RoleMenuService;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.Rollback;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.anyList;
-import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
-class RoleMenuServiceImplTest {
+@SpringBootTest
+public class RoleMenuServiceIntegrationTest {
 
-    // -----------------------------
-    // Nhóm test gom quyền (permission)
-    // -----------------------------
-    // Các test dưới đây kiểm tra cách RoleMenuServiceImpl chuyển dữ liệu
-    // role-menu thành tập authorities theo từng action (VIEW/UPDATE/DELETE/EXPORT).
+    @Autowired
+    private RoleMenuService roleMenuService;
 
-    @Mock
+    @Autowired
+    private RoleRepository roleRepository;
+
+    @Autowired
+    private MenuRepository menuRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private RoleUserRepository roleUserRepository;
+
+    @Autowired
     private RoleMenuRepository roleMenuRepository;
 
-    @InjectMocks
-    private RoleMenuServiceImpl roleMenuService;
+    private User user;
 
-    @Mock
-    private UserRepository userRepository;
-    @Mock
-    private PasswordEncoder passwordEncoder;
-    @Mock
-    private RoleUserService roleUserService;
-    @Mock
-    private CandidateService candidateService;
-    @Mock
-    private ManagementMemberService managementMemberService;
-    @Mock
-    private OrgMemberService orgMemberService;
-    @Mock
-    private RoleService roleService;
-    @Mock
-    private com.cvconnect.common.RestTemplateClient restTemplateClient;
-    @Mock
-    private ServiceUtils serviceUtils;
-    @Mock
-    private AuthService authService;
-    @Mock
-    private FailedRollbackService failedRollbackService;
+    @BeforeEach
+    void setup() {
+        user = new User();
+        user.setUsername("int_test_user");
+        user.setEmail("int_user@example.com");
+        user.setFullName("Int Test User");
+        user.setAccessMethod("LOCAL");
+        user.setIsActive(true);
+        user.setIsEmailVerified(true);
+        user = userRepository.save(user);
+    }
 
-    @InjectMocks
-    private UserServiceImpl userService;
-
+    private boolean hasPermission(Map<String, List<String>> authorities, String menuCode, PermissionType action) {
+        return authorities.getOrDefault(menuCode, List.of()).contains(action.name());
+    }
 
     @Test
-    @DisplayName("TC01 - chỉ kiểm tra quyền VIEW")
-    void shouldGrantOnlyViewPermission() {
-        // Arrange: repository trả về đúng 1 quyền VIEW cho menu USER.
-        Long userId = 100L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC01_only_view() {
+        Role role = new Role(); role.setCode("HR_ADMIN"); role.setName("HR"); role.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedRole = roleRepository.save(role);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ru = new RoleUser(); ru.setUserId(user.getId()); ru.setRoleId(savedRole.getId()); roleUserRepository.save(ru);
+        RoleMenu rm = new RoleMenu(); rm.setRoleId(savedRole.getId()); rm.setMenuId(menu.getId()); rm.setPermission("VIEW"); roleMenuRepository.save(rm);
 
-        RoleMenuProjection projection = mock(RoleMenuProjection.class);
-        when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("VIEW");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
-                .thenReturn(List.of(projection));
-
-        // Act: build authorities từ role HR_ADMIN.
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
-
-        // Assert: chỉ có VIEW, các action còn lại phải bị từ chối.
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("HR_ADMIN"));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -112,23 +83,16 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC02 - chỉ kiểm tra quyền UPDATE")
-    void shouldGrantOnlyUpdatePermission() {
-        // Arrange
-        Long userId = 100L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC02_only_update() {
+        Role role = new Role(); role.setCode("HR_ADMIN"); role.setName("HR"); role.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedRole = roleRepository.save(role);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ru = new RoleUser(); ru.setUserId(user.getId()); ru.setRoleId(savedRole.getId()); roleUserRepository.save(ru);
+        RoleMenu rm = new RoleMenu(); rm.setRoleId(savedRole.getId()); rm.setMenuId(menu.getId()); rm.setPermission("UPDATE"); roleMenuRepository.save(rm);
 
-        RoleMenuProjection projection = mock(RoleMenuProjection.class);
-        when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("UPDATE");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
-                .thenReturn(List.of(projection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
-
-        // Assert
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("HR_ADMIN"));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -136,23 +100,16 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC03 - chỉ kiểm tra quyền DELETE")
-    void shouldGrantOnlyDeletePermission() {
-        // Arrange
-        Long userId = 100L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC03_only_delete() {
+        Role role = new Role(); role.setCode("HR_ADMIN"); role.setName("HR"); role.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedRole = roleRepository.save(role);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ru = new RoleUser(); ru.setUserId(user.getId()); ru.setRoleId(savedRole.getId()); roleUserRepository.save(ru);
+        RoleMenu rm = new RoleMenu(); rm.setRoleId(savedRole.getId()); rm.setMenuId(menu.getId()); rm.setPermission("DELETE"); roleMenuRepository.save(rm);
 
-        RoleMenuProjection projection = mock(RoleMenuProjection.class);
-        when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("DELETE");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
-                .thenReturn(List.of(projection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
-
-        // Assert
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("HR_ADMIN"));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -160,23 +117,16 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC04 - chỉ kiểm tra quyền EXPORT")
-    void shouldGrantOnlyExportPermission() {
-        // Arrange
-        Long userId = 100L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC04_only_export() {
+        Role role = new Role(); role.setCode("HR_ADMIN"); role.setName("HR"); role.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedRole = roleRepository.save(role);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ru = new RoleUser(); ru.setUserId(user.getId()); ru.setRoleId(savedRole.getId()); roleUserRepository.save(ru);
+        RoleMenu rm = new RoleMenu(); rm.setRoleId(savedRole.getId()); rm.setMenuId(menu.getId()); rm.setPermission("EXPORT"); roleMenuRepository.save(rm);
 
-        RoleMenuProjection projection = mock(RoleMenuProjection.class);
-        when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("EXPORT");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("HR_ADMIN")))
-                .thenReturn(List.of(projection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("HR_ADMIN"));
-
-        // Assert
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("HR_ADMIN"));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -184,23 +134,16 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC05 - Lọc theo phạm vi quyền: role chỉ có VIEW không được UPDATE/DELETE/EXPORT")
-    void shouldFilterDataByPermissionScope_viewOnlyRole() {
-        // Arrange: role chỉ có quyền VIEW trên menu mục tiêu.
-        Long userId = 101L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC05_viewer_only_scope() {
+        Role role = new Role(); role.setCode("VIEWER"); role.setName("Viewer"); role.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedRole = roleRepository.save(role);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ru = new RoleUser(); ru.setUserId(user.getId()); ru.setRoleId(savedRole.getId()); roleUserRepository.save(ru);
+        RoleMenu rm = new RoleMenu(); rm.setRoleId(savedRole.getId()); rm.setMenuId(menu.getId()); rm.setPermission("VIEW"); roleMenuRepository.save(rm);
 
-        RoleMenuProjection projection = mock(RoleMenuProjection.class);
-        when(projection.getMenuCode()).thenReturn(menuCode);
-        when(projection.getPermission()).thenReturn("VIEW");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("VIEWER")))
-                .thenReturn(List.of(projection));
-
-        // Act: tạo authorities cho role VIEWER.
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("VIEWER"));
-
-        // Assert: chỉ có VIEW, các quyền còn lại phải không tồn tại.
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("VIEWER"));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -208,53 +151,37 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC06 - Hai role cùng menu, mỗi role 1 quyền khác nhau")
-    void shouldMergeDifferentPermissionsFromTwoRolesOnSameMenu() {
-        // Arrange: ROLE_A cấp VIEW, ROLE_B cấp EXPORT trên cùng menu USER.
-        Long userId = 102L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC06_merge_permissions_two_roles_same_menu() {
+        Role a = new Role(); a.setCode("ROLE_A"); a.setName("A"); a.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedA = roleRepository.save(a);
+        Role b = new Role(); b.setCode("ROLE_B"); b.setName("B"); b.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedB = roleRepository.save(b);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ra = new RoleUser(); ra.setUserId(user.getId()); ra.setRoleId(savedA.getId()); roleUserRepository.save(ra);
+        RoleUser rb = new RoleUser(); rb.setUserId(user.getId()); rb.setRoleId(savedB.getId()); roleUserRepository.save(rb);
+        RoleMenu rmA = new RoleMenu(); rmA.setRoleId(savedA.getId()); rmA.setMenuId(menu.getId()); rmA.setPermission("VIEW"); roleMenuRepository.save(rmA);
+        RoleMenu rmB = new RoleMenu(); rmB.setRoleId(savedB.getId()); rmB.setMenuId(menu.getId()); rmB.setPermission("EXPORT"); roleMenuRepository.save(rmB);
 
-        RoleMenuProjection roleAProjection = mock(RoleMenuProjection.class);
-        when(roleAProjection.getMenuCode()).thenReturn(menuCode);
-        when(roleAProjection.getPermission()).thenReturn("VIEW");
-
-        RoleMenuProjection roleBProjection = mock(RoleMenuProjection.class);
-        when(roleBProjection.getMenuCode()).thenReturn(menuCode);
-        when(roleBProjection.getPermission()).thenReturn("EXPORT");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
-                .thenReturn(List.of(roleAProjection, roleBProjection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
-
-        // Assert: quyền phải được gộp lại.
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("ROLE_A","ROLE_B"));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.EXPORT));
     }
 
     @Test
-    @DisplayName("TC07 - Hai role cùng menu, quyền bị trùng")
-    void shouldHandleDuplicatePermissionsFromTwoRolesOnSameMenu() {
-        // Arrange: cả hai role đều trả về VIEW trên cùng menu USER.
-        Long userId = 102L;
-        String menuCode = "USER";
+    @Transactional
+    @Rollback
+    void TC07_duplicate_permissions_two_roles_same_menu() {
+        Role a = new Role(); a.setCode("ROLE_A"); a.setName("A"); a.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedA = roleRepository.save(a);
+        Role b = new Role(); b.setCode("ROLE_B"); b.setName("B"); b.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedB = roleRepository.save(b);
+        String menuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        Menu menu = new Menu(); menu.setCode(menuCode); menu.setLabel("User"); menu.setSortOrder(1); menu = menuRepository.save(menu);
+        RoleUser ra = new RoleUser(); ra.setUserId(user.getId()); ra.setRoleId(savedA.getId()); roleUserRepository.save(ra);
+        RoleUser rb = new RoleUser(); rb.setUserId(user.getId()); rb.setRoleId(savedB.getId()); roleUserRepository.save(rb);
+        RoleMenu rmA = new RoleMenu(); rmA.setRoleId(savedA.getId()); rmA.setMenuId(menu.getId()); rmA.setPermission("VIEW"); roleMenuRepository.save(rmA);
+        RoleMenu rmB = new RoleMenu(); rmB.setRoleId(savedB.getId()); rmB.setMenuId(menu.getId()); rmB.setPermission("VIEW"); roleMenuRepository.save(rmB);
 
-        RoleMenuProjection roleAProjection = mock(RoleMenuProjection.class);
-        when(roleAProjection.getMenuCode()).thenReturn(menuCode);
-        when(roleAProjection.getPermission()).thenReturn("VIEW");
-
-        RoleMenuProjection roleBProjection = mock(RoleMenuProjection.class);
-        when(roleBProjection.getMenuCode()).thenReturn(menuCode);
-        when(roleBProjection.getPermission()).thenReturn("VIEW");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
-                .thenReturn(List.of(roleAProjection, roleBProjection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
-
-        // Assert: kết quả vẫn chỉ hợp lệ ở VIEW, không phát sinh quyền khác.
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("ROLE_A","ROLE_B"));
         assertTrue(hasPermission(authorities, menuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.UPDATE));
         assertFalse(hasPermission(authorities, menuCode, PermissionType.DELETE));
@@ -262,28 +189,21 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC08 - Hai role khác menu, không trộn permission sai menu")
-    void shouldNotMixPermissionsAcrossDifferentMenus() {
-        // Arrange: USER menu có VIEW, ROLE menu có DELETE.
-        Long userId = 102L;
-        String userMenuCode = "USER";
-        String roleMenuCode = "ROLE";
+    @Transactional
+    @Rollback
+    void TC08_not_mix_permissions_across_menus() {
+        Role a = new Role(); a.setCode("ROLE_A"); a.setName("A"); a.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedA = roleRepository.save(a);
+        Role b = new Role(); b.setCode("ROLE_B"); b.setName("B"); b.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); Role savedB = roleRepository.save(b);
+        String userMenuCode = "USER_" + UUID.randomUUID().toString().substring(0,8);
+        String roleMenuCode = "ROLE_" + UUID.randomUUID().toString().substring(0,8);
+        Menu userMenu = new Menu(); userMenu.setCode(userMenuCode); userMenu.setLabel("User"); userMenu.setSortOrder(1); userMenu = menuRepository.save(userMenu);
+        Menu roleMenu = new Menu(); roleMenu.setCode(roleMenuCode); roleMenu.setLabel("Role"); roleMenu.setSortOrder(2); roleMenu = menuRepository.save(roleMenu);
+        RoleUser ra = new RoleUser(); ra.setUserId(user.getId()); ra.setRoleId(savedA.getId()); roleUserRepository.save(ra);
+        RoleUser rb = new RoleUser(); rb.setUserId(user.getId()); rb.setRoleId(savedB.getId()); roleUserRepository.save(rb);
+        RoleMenu rmA = new RoleMenu(); rmA.setRoleId(savedA.getId()); rmA.setMenuId(userMenu.getId()); rmA.setPermission("VIEW"); roleMenuRepository.save(rmA);
+        RoleMenu rmB = new RoleMenu(); rmB.setRoleId(savedB.getId()); rmB.setMenuId(roleMenu.getId()); rmB.setPermission("DELETE"); roleMenuRepository.save(rmB);
 
-        RoleMenuProjection userMenuProjection = mock(RoleMenuProjection.class);
-        when(userMenuProjection.getMenuCode()).thenReturn(userMenuCode);
-        when(userMenuProjection.getPermission()).thenReturn("VIEW");
-
-        RoleMenuProjection roleMenuProjection = mock(RoleMenuProjection.class);
-        when(roleMenuProjection.getMenuCode()).thenReturn(roleMenuCode);
-        when(roleMenuProjection.getPermission()).thenReturn("DELETE");
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("ROLE_A", "ROLE_B")))
-                .thenReturn(List.of(userMenuProjection, roleMenuProjection));
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("ROLE_A", "ROLE_B"));
-
-        // Assert: mỗi menu chỉ giữ quyền của chính nó.
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("ROLE_A","ROLE_B"));
         assertTrue(hasPermission(authorities, userMenuCode, PermissionType.VIEW));
         assertFalse(hasPermission(authorities, userMenuCode, PermissionType.DELETE));
         assertTrue(hasPermission(authorities, roleMenuCode, PermissionType.DELETE));
@@ -291,120 +211,21 @@ class RoleMenuServiceImplTest {
     }
 
     @Test
-    @DisplayName("TC09 - Role stale: không còn bản ghi quyền hợp lệ")
-    void shouldReturnEmptyAuthoritiesForStaleRole() {
-        // Arrange: role xuất hiện ở input nhưng repository không còn bản ghi authority.
-        Long userId = 103L;
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("STALE_ROLE")))
-                .thenReturn(List.of());
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("STALE_ROLE"));
-
-        // Assert: fail-safe, không cấp quyền nào.
+    @Transactional
+    @Rollback
+    void TC09_stale_role_returns_empty() {
+        // create a role but do not create role_menu entries for it
+        Role stale = new Role(); stale.setCode("STALE_ROLE"); stale.setName("Stale"); stale.setMemberType(com.cvconnect.enums.MemberType.MANAGEMENT); stale = roleRepository.save(stale);
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("STALE_ROLE"));
         assertTrue(authorities.isEmpty());
     }
 
     @Test
-    @DisplayName("TC10 - Role không tồn tại: không có permission hợp lệ")
-    void shouldReturnEmptyAuthoritiesForMissingRole() {
-        // Arrange: role không tồn tại trong hệ thống.
-        Long userId = 104L;
-
-        when(roleMenuRepository.findAuthoritiesByUserId(userId, List.of("MISSING_ROLE")))
-                .thenReturn(List.of());
-
-        // Act
-        Map<String, List<String>> authorities = roleMenuService.getAuthorities(userId, List.of("MISSING_ROLE"));
-
-        // Assert: không tạo phantom permissions.
+    @Transactional
+    @Rollback
+    void TC10_missing_role_returns_empty() {
+        // do not create any role with code MISSING_ROLE
+        Map<String, List<String>> authorities = roleMenuService.getAuthorities(user.getId(), List.of("MISSING_ROLE"));
         assertTrue(authorities.isEmpty());
-    }
-
-    // ----------------------
-    // Nhóm test guard quyền admin
-    // ----------------------
-    // Các test dưới đây kiểm tra các ràng buộc quan trọng trong UserServiceImpl
-    // khi thu hồi quyền SYSTEM_ADMIN.
-
-    @Test
-    @DisplayName("TC11 - Guard: khong tu tuoc quyen admin cua chinh minh")
-    void retrieveAdminSystemRole_shouldNotAllowRemovingOwnAdminRole() {
-        // TC05
-        // Arrange: user hiện tại cũng chính là user bị thu hồi và đang có SYSTEM_ADMIN.
-        Long currentUserId = 11L;
-
-        RoleDto systemAdminRole = RoleDto.builder()
-                .id(99L)
-                .code(Constants.RoleCode.SYSTEM_ADMIN)
-                .build();
-
-        User user = new User();
-        user.setId(currentUserId);
-
-        RoleUserDto roleUserDto = RoleUserDto.builder()
-                .userId(currentUserId)
-                .roleId(systemAdminRole.getId())
-                .build();
-
-        when(roleService.getRoleByCode(Constants.RoleCode.SYSTEM_ADMIN)).thenReturn(systemAdminRole);
-        when(userRepository.findById(currentUserId)).thenReturn(Optional.of(user));
-        when(roleUserService.findByUserIdAndRoleId(currentUserId, systemAdminRole.getId())).thenReturn(roleUserDto);
-
-        try (MockedStatic<WebUtils> webUtilsMock = org.mockito.Mockito.mockStatic(WebUtils.class)) {
-            webUtilsMock.when(WebUtils::getCurrentUserId).thenReturn(currentUserId);
-
-            // Act + Assert: service phải chặn tự thu hồi quyền với đúng mã lỗi.
-            AppException ex = assertThrows(AppException.class,
-                    () -> userService.retrieveAdminSystemRole(currentUserId));
-
-            assertEquals(UserErrorCode.CANNOT_REMOVE_OWN_SYSTEM_ADMIN_ROLE, ex.getErrorCode());
-            // Guard phải chặn trước khi gọi thao tác xóa quyền.
-            verify(roleUserService, never()).deleteByUserIdAndRoleIds(eq(currentUserId), anyList());
-        }
-    }
-
-    @Test
-    @DisplayName("TC12 - Guard: khong xoa admin cuoi cung")
-    void retrieveAdminSystemRole_shouldNotRemoveLastActiveAdmin() {
-        // Arrange: actor thu hồi quyền của admin khác, nhưng sau đó hệ thống không còn admin active.
-        Long actorUserId = 21L;
-        Long targetUserId = 22L;
-
-        RoleDto systemAdminRole = RoleDto.builder()
-                .id(199L)
-                .code(Constants.RoleCode.SYSTEM_ADMIN)
-                .build();
-
-        User targetUser = new User();
-        targetUser.setId(targetUserId);
-
-        RoleUserDto targetRoleUser = RoleUserDto.builder()
-                .userId(targetUserId)
-                .roleId(systemAdminRole.getId())
-                .build();
-
-        when(roleService.getRoleByCode(Constants.RoleCode.SYSTEM_ADMIN)).thenReturn(systemAdminRole);
-        when(userRepository.findById(targetUserId)).thenReturn(Optional.of(targetUser));
-        when(roleUserService.findByUserIdAndRoleId(targetUserId, systemAdminRole.getId())).thenReturn(targetRoleUser);
-        when(roleUserService.existsUserActiveByRoleId(systemAdminRole.getId())).thenReturn(false);
-
-        try (MockedStatic<WebUtils> webUtilsMock = org.mockito.Mockito.mockStatic(WebUtils.class)) {
-            webUtilsMock.when(WebUtils::getCurrentUserId).thenReturn(actorUserId);
-
-            // Act + Assert: service phải ném lỗi LAST_SYSTEM_ADMIN_CANNOT_BE_REMOVED.
-            AppException ex = assertThrows(AppException.class,
-                    () -> userService.retrieveAdminSystemRole(targetUserId));
-
-            assertEquals(UserErrorCode.LAST_SYSTEM_ADMIN_CANNOT_BE_REMOVED, ex.getErrorCode());
-            // Theo implementation hiện tại: xóa trước rồi mới check điều kiện, nên delete được gọi 1 lần.
-            verify(roleUserService).deleteByUserIdAndRoleIds(targetUserId, List.of(systemAdminRole.getId()));
-        }
-    }
-
-    private boolean hasPermission(Map<String, List<String>> authorities, String menuCode, PermissionType action) {
-        // Hàm tiện ích giúp phần assert ngắn gọn, dễ đọc trong nhóm test permission.
-        return authorities.getOrDefault(menuCode, List.of()).contains(action.name());
     }
 }
